@@ -1,0 +1,14 @@
+langchain-core>=0.3
+langchain-openai>=0.3
+langchain-huggingface>=0.1
+langchain-chroma>=0.1
+langchain-community>=0.3
+chromadb>=0.6
+pypdf>=5.0
+python-docx>=1.0
+python-pptx>=1.0
+openpyxl>=3.1
+google-genai>=2.0
+nh3>=0.2
+python-dotenv>=1.0
+sentence-transformers>=3.0

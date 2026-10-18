@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shared-tutor"
+version = "1.0.0"
+description = "Shared RAG chain, validator, ingest, and file-utils for CBSE Tutor projects"
+requires-python = ">=3.11"
+dependencies = [
+    # LangChain core (no extras — subjects pin their own versions)
+    "langchain-core>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-huggingface>=0.1",
+    "langchain-chroma>=0.1",
+    "langchain-community>=0.3",
+    # Vector store
+    "chromadb>=0.6",
+    # PDF / doc parsing
+    "pypdf>=5.0",
+    "python-docx>=1.0",
+    "python-pptx>=1.0",
+    "openpyxl>=3.1",
+    # Vision & validation
+    "google-genai>=2.0",
+    # HTML sanitiser (optional but used by file_utils)
+    "nh3>=0.2",
+    # Env loading
+    "python-dotenv>=1.0",
+    # Embeddings
+    "sentence-transformers>=3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shared_tutor*"]
