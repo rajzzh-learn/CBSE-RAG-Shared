@@ -14,7 +14,7 @@ Shared Python package used by all four CBSE Class 12 RAG Tutor projects:
 | Module | What it provides |
 |--------|-----------------|
 | `shared_tutor/config.py` | `get_config()`, LLM defaults, Groq model aliases |
-| `shared_tutor/rag_chain.py` | `build_rag_chain()`, `build_llm()`, `convert_history()`, `invoke_with_retry()` |
+| `shared_tutor/rag_chain.py` | `build_rag_chain()`, `build_llm()`, `generate_full_answer()`, `convert_history()`, `invoke_with_retry()` |
 | `shared_tutor/validator.py` | Layer 3 — `validate_answer()` via Gemini 2.0 Flash Lite (free) |
 | `shared_tutor/ingest.py` | `build_vector_store()`, `load_pdfs()` |
 | `shared_tutor/file_utils.py` | `extract_text()`, `build_attachment()`, `image_to_base64_uri()` |
@@ -34,6 +34,13 @@ GOOGLE_API_KEY=your-key-here
 ```
 Get a free Gemini key at https://aistudio.google.com/app/apikey
 
+Answers longer than 6000 characters are not validated (they are returned unchanged, never clipped).
+
+### Long answers
+`generate_full_answer()` detects when the model stopped because it hit the token limit
+(`finish_reason=length`) and asks it to continue, up to 4 extra calls, joining the parts.
+Long outputs (for example many years of PYQs with solutions) are therefore not cut off.
+
 ## Installing in a subject project
 
 ### Local development
@@ -41,9 +48,9 @@ Get a free Gemini key at https://aistudio.google.com/app/apikey
 pip install -e "/Users/rajeshkumarasamy/Workspace/CBSE-RAG-Shared"
 ```
 
-### Streamlit Cloud (add to subject requirements.txt)
+### Streamlit Cloud (add to subject requirements.txt, pinned to a release tag)
 ```
-git+https://github.com/rajzzh-learn/CBSE-RAG-Shared.git
+shared-tutor @ git+https://github.com/rajzzh-learn/CBSE-RAG-Shared.git@v1.0.1
 ```
 
 ## Architecture
