@@ -22,7 +22,6 @@ import re
 import time
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
@@ -132,6 +131,39 @@ def _format_docs(docs) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
 
 
+MAX_CONTINUATIONS = 4  # extra LLM calls allowed when an answer hits max_tokens
+_CONTINUE_PROMPT = (
+    "Your previous reply was cut off by the output limit. Continue EXACTLY from where "
+    "it stopped. Do not repeat anything already written, do not add a preamble or "
+    "summary, and keep the same formatting (finish any open LaTeX, table or list)."
+)
+
+
+def _was_truncated(msg) -> bool:
+    meta = getattr(msg, "response_metadata", None) or {}
+    reason = meta.get("finish_reason") or meta.get("stop_reason") or ""
+    return str(reason).lower() in ("length", "max_tokens", "max_new_tokens", "token_limit")
+
+
+def generate_full_answer(llm, prompt, inputs: dict) -> str:
+    """Invoke llm and keep asking it to continue while it stops on the token limit.
+
+    Without this, long answers (e.g. 10+ years of PYQs with solutions) are silently
+    cut off at max_tokens.
+    """
+    messages = prompt.format_messages(**inputs)
+    first = invoke_with_retry(lambda: llm.invoke(messages))
+    text = first if isinstance(first, str) else (first.content or "")
+    last = first
+    for _ in range(MAX_CONTINUATIONS):
+        if isinstance(last, str) or not _was_truncated(last):
+            break
+        follow_up = messages + [AIMessage(content=text), HumanMessage(content=_CONTINUE_PROMPT)]
+        last = invoke_with_retry(lambda: llm.invoke(follow_up))
+        text += last.content or ""
+    return text
+
+
 def build_rag_chain(vector_store, system_prompt: str, retriever_top_k: int = 6):
     """
     Build a subject-specific RAG chain.
@@ -165,7 +197,7 @@ def build_rag_chain(vector_store, system_prompt: str, retriever_top_k: int = 6):
             context=RunnableLambda(lambda x: _format_docs(x["source_documents"]))
         )
         | RunnablePassthrough.assign(
-            answer=prompt | llm | StrOutputParser()
+            answer=RunnableLambda(lambda x: generate_full_answer(llm, prompt, x))
         )
     )
     return chain

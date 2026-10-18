@@ -27,6 +27,10 @@ from dataclasses import dataclass, field
 
 from shared_tutor.config import DEFAULT_GEMINI_VALIDATOR_MODEL, get_config
 
+# Answers longer than this are not validated: the validator only sees a clipped copy,
+# and its "verified/corrected" reply would then replace the full answer with the clipped one.
+MAX_VALIDATE_CHARS = 6000
+
 
 @dataclass
 class ValidationResult:
@@ -102,6 +106,9 @@ def validate_answer(
         # openai path — future extension; skip for now
         return ValidationResult(answer=answer, status="skipped")
 
+    if len(answer) > MAX_VALIDATE_CHARS:
+        return ValidationResult(answer=answer, status="skipped")
+
     # ── Call Gemini ─────────────────────────────────────────────────────────
     try:
         from google import genai
@@ -110,7 +117,7 @@ def validate_answer(
             subject=subject,
             question=question[:3000],        # cap to avoid huge prompts
             context=context[:4000],
-            answer=answer[:6000],
+            answer=answer,
         )
 
         client = genai.Client(api_key=google_key)
