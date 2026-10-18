@@ -27,14 +27,14 @@ Layer 2 — Generate   Groq (fast, free) answers using retrieved context
 Layer 3 — Validate   Gemini 2.0 Flash Lite fact-checks the answer (free)
 ```
 
-Layer 3 is **opt-in**. Add to `.env` or Streamlit Secrets:
+Layer 3 is **opt-in** and multi-LLM: Gemini and OpenAI GPT-4o validate in turn (`VALIDATION_PROVIDER` = first choice, the other is the fallback; each needs its own key). Long answers are validated section by section. When an answer is not verified the app shows why. Add to `.env` or Streamlit Secrets:
 ```
 ENABLE_VALIDATION=true
 GOOGLE_API_KEY=your-key-here
 ```
 Get a free Gemini key at https://aistudio.google.com/app/apikey
 
-Answers longer than 6000 characters are not validated (they are returned unchanged, never clipped).
+Answers are checked in sections of about 5000 characters, so long answers are fully validated; answers over about 40000 characters are skipped, with the reason shown.
 
 ### Long answers
 `generate_full_answer()` detects when the model stopped because it hit the token limit

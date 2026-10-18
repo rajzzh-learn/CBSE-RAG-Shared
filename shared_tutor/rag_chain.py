@@ -128,7 +128,38 @@ def build_llm():
 # ── RAG chain builder ─────────────────────────────────────────────────────
 
 def _format_docs(docs) -> str:
-    return "\n\n".join(doc.page_content for doc in docs)
+    """Join chunks, labelling each with its source file and page so the model can cite it."""
+    parts = []
+    for doc in docs:
+        meta = getattr(doc, "metadata", None) or {}
+        name = str(meta.get("source", "")).replace("\\", "/").rsplit("/", 1)[-1]
+        page = meta.get("page")
+        label = f"[Source: {name}" + (f", page {int(page) + 1}" if isinstance(page, int) else "") + "]"
+        parts.append(f"{label}\n{doc.page_content}" if name else doc.page_content)
+    return "\n\n".join(parts)
+
+
+# Questions about past papers need many more chunks than a normal question: with only the
+# default handful the model has too little source text and starts inventing questions.
+_PYQ_QUERY = re.compile(
+    r"\b(pyq|previous[- ]year|past[- ]year|year[- ]?wise|question papers?|board papers?|"
+    r"sample papers?|20[12]\d)\b", re.IGNORECASE)
+DEFAULT_PYQ_TOP_K = 14
+
+
+def build_retrieve_fn(vector_store, top_k: int):
+    """Return retrieve(question) -> docs, using a wider search for past-paper questions."""
+    def make(k: int):
+        return vector_store.as_retriever(
+            search_type="mmr", search_kwargs={"k": k, "fetch_k": max(30, k * 3)})
+
+    pyq_k = max(top_k, int(get_config("PYQ_RETRIEVER_TOP_K", str(DEFAULT_PYQ_TOP_K))))
+    normal, wide = make(top_k), make(pyq_k)
+
+    def retrieve(question: str):
+        return (wide if _PYQ_QUERY.search(question) else normal).invoke(question)
+
+    return retrieve
 
 
 MAX_CONTINUATIONS = 4  # extra LLM calls allowed when an answer hits max_tokens
@@ -177,10 +208,7 @@ def build_rag_chain(vector_store, system_prompt: str, retriever_top_k: int = 6):
     → {"answer": str, "source_documents": list}
     """
     llm = build_llm()
-    retriever = vector_store.as_retriever(
-        search_type="mmr",
-        search_kwargs={"k": retriever_top_k, "fetch_k": max(30, retriever_top_k * 3)},
-    )
+    retrieve = build_retrieve_fn(vector_store, retriever_top_k)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -191,7 +219,7 @@ def build_rag_chain(vector_store, system_prompt: str, retriever_top_k: int = 6):
     # Retrieve once → reuse for both context text and source_documents
     chain = (
         RunnablePassthrough.assign(
-            source_documents=RunnableLambda(lambda x: retriever.invoke(x["question"]))
+            source_documents=RunnableLambda(lambda x: retrieve(x["question"]))
         )
         | RunnablePassthrough.assign(
             context=RunnableLambda(lambda x: _format_docs(x["source_documents"]))
