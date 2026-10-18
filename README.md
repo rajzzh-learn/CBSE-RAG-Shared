@@ -24,7 +24,7 @@ Shared Python package used by all four CBSE Class 12 RAG Tutor projects:
 ```
 Layer 1 — Retrieve   ChromaDB MMR search on subject PDFs
 Layer 2 — Generate   Groq (fast, free) answers using retrieved context
-Layer 3 — Validate   Gemini 2.0 Flash Lite fact-checks the answer (free)
+Layer 3 — Validate   Gemini and/or OpenAI GPT-4o fact-check the answer (automatic fallback)
 ```
 
 Layer 3 is **opt-in** and multi-LLM: Gemini and OpenAI GPT-4o validate in turn (`VALIDATION_PROVIDER` = first choice, the other is the fallback; each needs its own key). Long answers are validated section by section. When an answer is not verified the app shows why. Add to `.env` or Streamlit Secrets:
