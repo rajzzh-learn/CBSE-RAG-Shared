@@ -147,17 +147,64 @@ _PYQ_QUERY = re.compile(
 DEFAULT_PYQ_TOP_K = 14
 
 
+_YEAR = re.compile(r"\b(20[12]\d)\b")
+_YEAR_RANGE = re.compile(r"\b(20[12]\d)\s*(?:to|-|–|—|till|until)\s*(20[12]\d)\b", re.IGNORECASE)
+MAX_YEAR_CHUNKS = 24   # total chunks added for the years named in a question
+
+
+def years_in_question(question: str) -> list[int]:
+    """Years named in the question, with ranges like '2013 to 2026' expanded."""
+    years = {int(y) for y in _YEAR.findall(question)}
+    for a, b in _YEAR_RANGE.findall(question):
+        lo, hi = sorted((int(a), int(b)))
+        years.update(range(lo, hi + 1))
+    return sorted(years)
+
+
 def build_retrieve_fn(vector_store, top_k: int):
-    """Return retrieve(question) -> docs, using a wider search for past-paper questions."""
+    """Return retrieve(question) -> docs.
+
+    Past-paper questions use a wider search. If the question names years, chunks from the
+    files whose name contains that year are fetched too: plain similarity search ignores
+    the year in a file name, so a '2023 paper' question would otherwise miss that paper.
+    """
     def make(k: int):
         return vector_store.as_retriever(
             search_type="mmr", search_kwargs={"k": k, "fetch_k": max(30, k * 3)})
 
     pyq_k = max(top_k, int(get_config("PYQ_RETRIEVER_TOP_K", str(DEFAULT_PYQ_TOP_K))))
     normal, wide = make(top_k), make(pyq_k)
+    sources_by_year: dict[int, list[str]] = {}
+
+    def year_sources() -> dict[int, list[str]]:
+        if not sources_by_year:
+            metas = vector_store.get(include=["metadatas"])["metadatas"]
+            for src in {m.get("source", "") for m in metas}:
+                name = src.replace("\\", "/").rsplit("/", 1)[-1]
+                if "/PYQ/" not in src.replace("\\", "/"):
+                    continue
+                for y in _YEAR.findall(name):
+                    sources_by_year.setdefault(int(y), []).append(src)
+            sources_by_year[0] = []   # marks "loaded"
+        return sources_by_year
 
     def retrieve(question: str):
-        return (wide if _PYQ_QUERY.search(question) else normal).invoke(question)
+        if not _PYQ_QUERY.search(question):
+            return normal.invoke(question)
+        docs = list(wide.invoke(question))
+        years = [y for y in years_in_question(question) if y in year_sources()]
+        if years:
+            per_year = max(2, MAX_YEAR_CHUNKS // len(years))
+            seen = {(d.metadata.get("source"), d.metadata.get("page"), d.page_content[:60]) for d in docs}
+            for y in years:
+                hits = vector_store.similarity_search(
+                    question, k=per_year, filter={"source": {"$in": sources_by_year[y]}})
+                for d in hits:
+                    key = (d.metadata.get("source"), d.metadata.get("page"), d.page_content[:60])
+                    if key not in seen:
+                        seen.add(key)
+                        docs.append(d)
+        return docs
 
     return retrieve
 
